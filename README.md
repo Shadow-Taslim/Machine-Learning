@@ -6,7 +6,9 @@ A collection of machine learning experiments, notebooks, and practice projects.
 
 | File | Description |
 |------|-------------|
-| `LinearRegression.ipynb` | Jupyter notebook exploring linear regression — implementation, training, and evaluation. *(Currently empty — work in progress)* |
+| `LinearRegression/LinearRegression.ipynb` | Linear regression — implementation, training, and evaluation. |
+| `LogisticRegression/LogisticRegression.ipynb` | Logistic regression for binary classification. |
+| `TextClassification/TextClassfication.ipynb` | **Yelp review sentiment classification** — TF-IDF + Logistic Regression baseline vs. fine-tuned DistilBERT, with EDA, confusion matrices, and an inference demo. |
 
 ## 🚀 Getting Started
 
@@ -17,7 +19,7 @@ A collection of machine learning experiments, notebooks, and practice projects.
 - Common ML libraries:
 
 ```bash
-pip install numpy pandas matplotlib scikit-learn jupyter
+pip install numpy pandas matplotlib seaborn scikit-learn torch transformers accelerate jupyter
 ```
 
 ### Running the Notebooks
@@ -32,7 +34,9 @@ Then open any `.ipynb` file from the browser interface and run the cells (Shift 
 
 - **Supervised Learning**
   - Linear Regression
-- *(More topics coming soon...)*
+  - Logistic Regression
+- **NLP**
+  - Text Classification (TF-IDF baseline + DistilBERT fine-tuning)
 
 ## 📝 Notes
 
@@ -41,4 +45,4 @@ Then open any `.ipynb` file from the browser interface and run the cells (Shift 
 
 ---
 
-*Last updated: September 2026*
+*Last updated: October 2026*
