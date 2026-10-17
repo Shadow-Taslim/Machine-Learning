@@ -10,6 +10,7 @@ A collection of machine learning experiments, notebooks, and practice projects.
 | `LogisticRegression/LogisticRegression.ipynb` | Logistic regression for binary classification. |
 | `TextClassification/TextClassfication.ipynb` | **Yelp review sentiment classification** — TF-IDF + Logistic Regression baseline vs. fine-tuned DistilBERT, with EDA, confusion matrices, and an inference demo. |
 | `ReinforcementLearning/ReinforcementLearning.ipynb` | **Q-learning on FrozenLake** — tabular RL from scratch: ε-greedy exploration, Bellman updates, training curves, policy visualization, stochastic vs. deterministic comparison. |
+| `ReinforcementLearning/DQN_CartPole.ipynb` | **Deep Q-Network on CartPole** — scaling RL to continuous states: Q-network, experience replay, target network, training curves, step-by-step episode replay. |
 
 ## 🚀 Getting Started
 
@@ -40,6 +41,7 @@ Then open any `.ipynb` file from the browser interface and run the cells (Shift 
   - Text Classification (TF-IDF baseline + DistilBERT fine-tuning)
 - **Reinforcement Learning**
   - Q-Learning (tabular, model-free)
+  - Deep Q-Network (function approximation, experience replay, target network)
 
 ## 📝 Notes
 
