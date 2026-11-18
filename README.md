@@ -8,6 +8,7 @@ A collection of machine learning experiments, notebooks, and practice projects.
 |------|-------------|
 | `LinearRegression/LinearRegression.ipynb` | Linear regression — implementation, training, and evaluation. |
 | `LogisticRegression/LogisticRegression.ipynb` | Logistic regression for binary classification. |
+| `AnomalyDetection/AnomalyDetection.ipynb` | **Unsupervised anomaly detection** — Isolation Forest, One-Class SVM, and LOF on synthetic sensor data, with scaling, ROC/PR evaluation, confusion matrix, decision regions, and an inference demo. |
 | `TextClassification/TextClassfication.ipynb` | **Yelp review sentiment classification** — TF-IDF + Logistic Regression baseline vs. fine-tuned DistilBERT, with EDA, confusion matrices, and an inference demo. |
 | `ReinforcementLearning/ReinforcementLearning.ipynb` | **Q-learning on FrozenLake** — tabular RL from scratch: ε-greedy exploration, Bellman updates, training curves, policy visualization, stochastic vs. deterministic comparison. |
 | `ReinforcementLearning/DQN_CartPole.ipynb` | **Deep Q-Network on CartPole** — scaling RL to continuous states: Q-network, experience replay, target network, training curves, step-by-step episode replay. |
@@ -38,6 +39,8 @@ Then open any `.ipynb` file from the browser interface and run the cells (Shift 
 - **Supervised Learning**
   - Linear Regression
   - Logistic Regression
+- **Unsupervised Learning**
+  - Anomaly Detection (Isolation Forest, One-Class SVM, Local Outlier Factor)
 - **NLP**
   - Text Classification (TF-IDF baseline + DistilBERT fine-tuning)
 - **Computer Vision / Deep Learning**
@@ -53,4 +56,4 @@ Then open any `.ipynb` file from the browser interface and run the cells (Shift 
 
 ---
 
-*Last updated: October 2026*
+*Last updated: November 2026*
