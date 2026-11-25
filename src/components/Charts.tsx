@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 
+import type { ExecutionMetrics } from '../lib/mlMath';
+
 export interface MetricTileProps {
   label: string;
   value: string;
@@ -34,6 +36,156 @@ export const MetricTile: React.FC<MetricTileProps> = ({
     )}
   </div>
 );
+
+function formatDurationMs(ms: number): string {
+  if (ms < 1) return `${(ms * 1000).toFixed(0)} µs`;
+  if (ms < 10) return `${ms.toFixed(2)} ms`;
+  if (ms < 1000) return `${ms.toFixed(1)} ms`;
+  return `${(ms / 1000).toFixed(2)} s`;
+}
+
+function formatCompactLoss(v: number): string {
+  if (Math.abs(v) >= 1000) return v.toExponential(2);
+  if (Math.abs(v) > 0 && Math.abs(v) < 0.001) return v.toExponential(2);
+  return v.toFixed(4);
+}
+
+export const ExecutionPerformancePanel: React.FC<{
+  execution: ExecutionMetrics;
+  iterationLabel?: string;
+  lossLabel?: string;
+  rateLabel?: string;
+}> = ({
+  execution,
+  iterationLabel = 'Iterations',
+  lossLabel = 'Objective Loss',
+  rateLabel = 'Convergence Rate',
+}) => {
+  const history = execution.lossHistory;
+  const hasCurve = Boolean(history && history.length >= 2);
+
+  let sparkPath = '';
+  if (hasCurve && history) {
+    const w = 220;
+    const h = 40;
+    const minV = Math.min(...history);
+    const maxV = Math.max(...history);
+    const span = maxV - minV || 1;
+    sparkPath = history
+      .map((val, idx) => {
+        const x = (idx / (history.length - 1)) * (w - 4) + 2;
+        const y = h - 4 - ((val - minV) / span) * (h - 8);
+        return `${idx === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+      })
+      .join(' ');
+  }
+
+  const hasInitialAndFinal =
+    execution.initialLoss !== undefined && execution.finalLoss !== undefined;
+
+  return (
+    <section
+      aria-label="Execution and convergence telemetry"
+      className="bg-white border border-slate-200 rounded-lg px-4 py-3.5"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
+        <div className="flex items-center gap-3">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-700">
+            Execution Performance
+          </h3>
+          <span className="text-xs font-mono text-slate-500">
+            {execution.solver}
+          </span>
+        </div>
+        <span
+          className={`text-xs font-mono font-medium ${
+            execution.converged ? 'text-emerald-700' : 'text-amber-700'
+          }`}
+        >
+          {execution.converged ? '● Converged' : '▲ Iteration Limit'}
+        </span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-4 items-center">
+        <div>
+          <div className="text-[11px] uppercase tracking-wider text-slate-500">
+            Training Time
+          </div>
+          <div className="mt-0.5 text-base font-mono font-semibold tabular-nums text-slate-900">
+            {formatDurationMs(execution.trainingTimeMs)}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[11px] uppercase tracking-wider text-slate-500">
+            {iterationLabel}
+          </div>
+          <div className="mt-0.5 text-base font-mono font-semibold tabular-nums text-slate-900">
+            {execution.iterations.toLocaleString()}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[11px] uppercase tracking-wider text-slate-500">
+            {lossLabel}
+          </div>
+          <div className="mt-0.5 text-sm font-mono font-semibold tabular-nums text-slate-900">
+            {hasInitialAndFinal
+              ? `${formatCompactLoss(execution.initialLoss!)} → ${formatCompactLoss(
+                  execution.finalLoss!
+                )}`
+              : execution.finalLoss !== undefined
+              ? formatCompactLoss(execution.finalLoss)
+              : '—'}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-slate-500">
+              {rateLabel}
+            </div>
+            <div className="mt-0.5 text-sm font-mono font-semibold tabular-nums text-slate-900">
+              {execution.lossReductionPct !== undefined
+                ? `−${execution.lossReductionPct.toFixed(1)}%`
+                : execution.convergenceRate !== undefined
+                ? execution.convergenceRate.toExponential(2)
+                : '—'}
+              {execution.convergenceRate !== undefined &&
+                execution.lossReductionPct !== undefined && (
+                  <span className="ml-1.5 text-[11px] font-normal text-slate-500">
+                    ({execution.convergenceRate >= 0 ? '−' : '+'}
+                    {Math.abs(execution.convergenceRate).toFixed(4)}/step)
+                  </span>
+                )}
+            </div>
+          </div>
+
+          {hasCurve && (
+            <svg
+              viewBox="0 0 220 40"
+              className="w-24 h-8 shrink-0 hidden sm:block"
+              aria-label="Loss convergence curve"
+            >
+              <path
+                d={sparkPath}
+                fill="none"
+                stroke="#2563EB"
+                strokeWidth="1.75"
+              />
+            </svg>
+          )}
+        </div>
+      </div>
+
+      {execution.note && (
+        <div className="mt-2.5 pt-2 border-t border-slate-100 text-xs font-mono text-slate-500">
+          {execution.note}
+        </div>
+      )}
+    </section>
+  );
+};
 
 export interface ScatterPoint {
   x: number;

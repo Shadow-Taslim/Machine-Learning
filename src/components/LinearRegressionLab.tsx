@@ -3,6 +3,7 @@ import { parseCsv, trainTestSplitIndices } from '../lib/csv';
 import { fitLinearRegression, regressionMetrics } from '../lib/mlMath';
 import {
   CoefficientBarChart,
+  ExecutionPerformancePanel,
   MetricTile,
   ScatterPlot,
 } from './Charts';
@@ -201,6 +202,13 @@ export const LinearRegressionLab: React.FC = () => {
           detail="OLS baseline term"
         />
       </div>
+
+      <ExecutionPerformancePanel
+        execution={result.model.execution}
+        iterationLabel="Matrix Pivots"
+        lossLabel="Train MSE"
+        rateLabel="Residual ‖Ax−b‖₂"
+      />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <ScatterPlot

@@ -61,6 +61,8 @@ export function generateMoons2D(
   return pts;
 }
 
+import type { ExecutionMetrics } from './mlMath';
+
 export interface SVMModel {
   kernel: 'linear' | 'rbf';
   gamma: number;
@@ -72,6 +74,7 @@ export interface SVMModel {
   supportIndices: number[];
   decisionFunction: (x: number[]) => number;
   predict: (x: number[]) => number; // 0 or 1
+  execution: ExecutionMetrics;
 }
 
 function kernelVal(
@@ -108,6 +111,7 @@ export function fitSVM(
     seed?: number;
   }
 ): SVMModel {
+  const t0 = performance.now();
   const n = X.length;
   const y = y01.map((v) => (v === 1 ? 1 : -1));
   const C = options.C;
@@ -153,7 +157,29 @@ export function fitSVM(
   let b = 0;
   let passes = 0;
   let totalIters = 0;
+  let alphaUpdates = 0;
   const maxTotalIters = 1200;
+  const lossHistory: number[] = [];
+
+  const computePrimalHingeLoss = () => {
+    let hingeSum = 0;
+    let normSq = 0;
+    for (let i = 0; i < n; i++) {
+      let fx = b;
+      for (let k = 0; k < n; k++) {
+        if (alphas[k] > 0) fx += alphas[k] * y[k] * K[k][i];
+      }
+      hingeSum += Math.max(0, 1 - y[i] * fx);
+      if (alphas[i] > 0) {
+        for (let k = 0; k < n; k++) {
+          if (alphas[k] > 0) normSq += alphas[i] * alphas[k] * y[i] * y[k] * K[i][k];
+        }
+      }
+    }
+    return (0.5 * normSq + C * hingeSum) / (n || 1);
+  };
+
+  lossHistory.push(computePrimalHingeLoss());
 
   while (passes < maxPasses && totalIters < maxTotalIters) {
     let numChanged = 0;
@@ -220,7 +246,12 @@ export function fitSVM(
         else b = (b1 + b2) / 2;
 
         numChanged++;
+        alphaUpdates++;
       }
+    }
+
+    if (totalIters % 10 === 0 || numChanged === 0) {
+      lossHistory.push(computePrimalHingeLoss());
     }
 
     if (numChanged === 0) passes++;
@@ -239,6 +270,12 @@ export function fitSVM(
       supportAlphas.push(alphas[i]);
     }
   }
+
+  const initialLoss = lossHistory[0];
+  const finalLoss = lossHistory[lossHistory.length - 1];
+  const lossReductionPct =
+    initialLoss > 0 ? ((initialLoss - finalLoss) / initialLoss) * 100 : 0;
+  const trainingTimeMs = performance.now() - t0;
 
   const decisionFunction = (pt: number[]) => {
     let sum = b;
@@ -262,6 +299,19 @@ export function fitSVM(
     supportIndices,
     decisionFunction,
     predict: (pt: number[]) => (decisionFunction(pt) >= 0 ? 1 : 0),
+    execution: {
+      solver: `Platt SMO (${options.kernel.toUpperCase()} kernel)`,
+      trainingTimeMs,
+      iterations: totalIters,
+      converged: passes >= maxPasses,
+      initialLoss,
+      finalLoss,
+      lossReductionPct,
+      convergenceRate:
+        totalIters > 0 ? (initialLoss - finalLoss) / totalIters : 0,
+      lossHistory,
+      note: `${alphaUpdates} α-pair updates · ${supportVectors.length}/${n} support vectors (${((supportVectors.length / (n || 1)) * 100).toFixed(0)}%)`,
+    },
   };
 }
 

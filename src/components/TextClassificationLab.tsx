@@ -8,6 +8,7 @@ import {
 import {
   CoefficientBarChart,
   ConfusionMatrixCard,
+  ExecutionPerformancePanel,
   MetricTile,
 } from './Charts';
 
@@ -129,6 +130,13 @@ export const TextClassificationLab: React.FC = () => {
           detail="Stop-word filtered"
         />
       </div>
+
+      <ExecutionPerformancePanel
+        execution={trained.execution}
+        iterationLabel="GD Iterations"
+        lossLabel="L2 Log-Loss (Init → Final)"
+        rateLabel="Loss Convergence"
+      />
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         <div className="xl:col-span-5 space-y-6">

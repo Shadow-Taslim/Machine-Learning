@@ -7,7 +7,11 @@ import {
   trainCartPoleDQN,
   trainFrozenLakeQLearning,
 } from '../lib/rl';
-import { MetricTile, MultiLineChart } from './Charts';
+import {
+  ExecutionPerformancePanel,
+  MetricTile,
+  MultiLineChart,
+} from './Charts';
 
 export const ReinforcementLab: React.FC = () => {
   const [tab, setTab] = useState<'frozenlake' | 'cartpole'>('frozenlake');
@@ -286,6 +290,13 @@ export const ReinforcementLab: React.FC = () => {
             />
           </div>
 
+          <ExecutionPerformancePanel
+            execution={lakeResult.execution}
+            iterationLabel="Bellman TD Updates"
+            lossLabel="Mean |TD Error| (Start → End)"
+            rateLabel="TD Error Decay"
+          />
+
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
             <div className="xl:col-span-5 bg-white border border-slate-200 rounded-lg p-5 space-y-4">
               <div className="flex items-center justify-between">
@@ -466,6 +477,13 @@ export const ReinforcementLab: React.FC = () => {
               detail="Exploration rate"
             />
           </div>
+
+          <ExecutionPerformancePanel
+            execution={dqnResult.execution}
+            iterationLabel="Gradient Updates"
+            lossLabel="TD Loss (Ep 1 → Final)"
+            rateLabel="Loss Convergence"
+          />
 
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
             <div className="xl:col-span-6 bg-white border border-slate-200 rounded-lg p-5 space-y-3">

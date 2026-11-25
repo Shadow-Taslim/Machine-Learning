@@ -1,4 +1,5 @@
 import { mulberry32 } from './csv';
+import type { ExecutionMetrics } from './mlMath';
 
 // ============================================================================
 // 1. FrozenLake-v1 (4x4) Q-Learning
@@ -50,6 +51,7 @@ export interface QLearningResult {
   epsHistory: number[];
   randomSuccessRate: number;
   trainedSuccessRate: number;
+  execution: ExecutionMetrics;
 }
 
 export function trainFrozenLakeQLearning(options: {
@@ -60,13 +62,19 @@ export function trainFrozenLakeQLearning(options: {
   isSlippery: boolean;
   seed?: number;
 }): QLearningResult {
+  const t0 = performance.now();
   const rng = mulberry32(options.seed ?? 42);
   const Q: number[][] = Array.from({ length: 16 }, () => [0, 0, 0, 0]);
   const rewards: number[] = [];
   const epsHistory: number[] = [];
+  const tdErrorBuckets: number[] = [];
 
   let epsilon = 1.0;
   const minEpsilon = 0.01;
+  let totalUpdates = 0;
+  const bucketSize = Math.max(1, Math.floor(options.episodes / 30));
+  let bucketErrSum = 0;
+  let bucketErrCount = 0;
 
   for (let ep = 0; ep < options.episodes; ep++) {
     let state = 0;
@@ -92,8 +100,12 @@ export function trainFrozenLakeQLearning(options: {
       );
       const maxNextQ = done ? 0 : Math.max(...Q[nextState]);
       const tdTarget = reward + options.gamma * maxNextQ;
-      Q[state][action] += options.alpha * (tdTarget - Q[state][action]);
+      const tdErr = tdTarget - Q[state][action];
+      Q[state][action] += options.alpha * tdErr;
 
+      totalUpdates++;
+      bucketErrSum += Math.abs(tdErr);
+      bucketErrCount++;
       totalReward += reward;
       state = nextState;
       if (done) break;
@@ -101,6 +113,12 @@ export function trainFrozenLakeQLearning(options: {
     rewards.push(totalReward);
     epsHistory.push(epsilon);
     epsilon = Math.max(minEpsilon, epsilon * options.decayRate);
+
+    if ((ep + 1) % bucketSize === 0 || ep === options.episodes - 1) {
+      tdErrorBuckets.push(bucketErrCount > 0 ? bucketErrSum / bucketErrCount : 0);
+      bucketErrSum = 0;
+      bucketErrCount = 0;
+    }
   }
 
   const window = Math.min(200, Math.max(20, Math.floor(options.episodes / 15)));
@@ -143,12 +161,31 @@ export function trainFrozenLakeQLearning(options: {
     }
   }
 
+  const trainingTimeMs = performance.now() - t0;
+  const initialTd = tdErrorBuckets[0] ?? 0;
+  const finalTd = tdErrorBuckets[tdErrorBuckets.length - 1] ?? 0;
+  const lossReductionPct =
+    initialTd > 0 ? ((initialTd - finalTd) / initialTd) * 100 : 0;
+
   return {
     Q,
     movingAvg,
     epsHistory,
     randomSuccessRate: randWins / evalEpisodes,
     trainedSuccessRate: trainedWins / evalEpisodes,
+    execution: {
+      solver: 'Tabular Q-Learning (Bellman TD)',
+      trainingTimeMs,
+      iterations: totalUpdates,
+      converged: finalTd < 0.05 || trainedWins > randWins,
+      initialLoss: initialTd,
+      finalLoss: finalTd,
+      lossReductionPct,
+      convergenceRate:
+        options.episodes > 0 ? (initialTd - finalTd) / options.episodes : 0,
+      lossHistory: tdErrorBuckets,
+      note: `${options.episodes.toLocaleString()} episodes · ${totalUpdates.toLocaleString()} Bellman TD updates (mean |δ|)`,
+    },
   };
 }
 
@@ -343,6 +380,7 @@ export interface DQNResult {
   trainedAvgReturn: number;
   bestEpisodeTrajectory: { state: CartPoleState; action: number; step: number }[];
   policyNet: MLP;
+  execution: ExecutionMetrics;
 }
 
 export function trainCartPoleDQN(options: {
@@ -352,6 +390,7 @@ export function trainCartPoleDQN(options: {
   decayRate?: number;
   seed?: number;
 } = {}): DQNResult {
+  const t0 = performance.now();
   const episodes = options.episodes ?? 220;
   const gamma = options.gamma ?? 0.99;
   const lr = options.lr ?? 0.0025;
@@ -368,12 +407,15 @@ export function trainCartPoleDQN(options: {
 
   const returnsHistory: number[] = [];
   const epsHistory: number[] = [];
+  const episodeLossHistory: number[] = [];
   let epsilon = 1.0;
   const minEpsilon = 0.02;
   let globalSteps = 0;
+  let gradientSteps = 0;
+  let targetSyncs = 0;
 
-  const trainBatch = () => {
-    if (buffer.length < batchSize) return;
+  const trainBatch = (): number | null => {
+    if (buffer.length < batchSize) return null;
     // Accumulate gradients over batch
     const gw1 = policyNet.w1.map((r) => r.map(() => 0));
     const gb1 = policyNet.b1.map(() => 0);
@@ -381,6 +423,7 @@ export function trainCartPoleDQN(options: {
     const gb2 = policyNet.b2.map(() => 0);
     const gw3 = policyNet.w3.map((r) => r.map(() => 0));
     const gb3 = [0, 0];
+    let batchSqErr = 0;
 
     for (let b = 0; b < batchSize; b++) {
       const tr = buffer[Math.floor(rng() * buffer.length)];
@@ -390,7 +433,9 @@ export function trainCartPoleDQN(options: {
         ? tr.r
         : tr.r + gamma * Math.max(nextQ[0], nextQ[1]);
 
-      const err = Math.max(-1.5, Math.min(1.5, fwd.out[tr.a] - targetVal));
+      const rawErr = fwd.out[tr.a] - targetVal;
+      batchSqErr += 0.5 * rawErr * rawErr;
+      const err = Math.max(-1.5, Math.min(1.5, rawErr));
       const dOut = [0, 0];
       dOut[tr.a] = err / batchSize;
 
@@ -429,11 +474,16 @@ export function trainCartPoleDQN(options: {
     for (let i = 0; i < hidden; i++)
       for (let j = 0; j < 2; j++) policyNet.w3[i][j] -= lr * gw3[i][j];
     for (let j = 0; j < 2; j++) policyNet.b3[j] -= lr * gb3[j];
+
+    gradientSteps++;
+    return batchSqErr / batchSize;
   };
 
   for (let ep = 0; ep < episodes; ep++) {
     let state = resetCartPole(rng);
     let epReturn = 0;
+    let epLossSum = 0;
+    let epLossCount = 0;
     for (let t = 0; t < 300; t++) {
       let action = 0;
       if (rng() < epsilon) {
@@ -455,12 +505,22 @@ export function trainCartPoleDQN(options: {
       });
 
       globalSteps++;
-      if (globalSteps % 2 === 0) trainBatch();
-      if (globalSteps % 200 === 0) targetNet = cloneMLP(policyNet);
+      if (globalSteps % 2 === 0) {
+        const batchLoss = trainBatch();
+        if (batchLoss !== null) {
+          epLossSum += batchLoss;
+          epLossCount++;
+        }
+      }
+      if (globalSteps % 200 === 0) {
+        targetNet = cloneMLP(policyNet);
+        targetSyncs++;
+      }
 
       state = res.nextState;
       if (res.done) break;
     }
+    if (epLossCount > 0) episodeLossHistory.push(epLossSum / epLossCount);
     returnsHistory.push(epReturn);
     epsHistory.push(epsilon);
     epsilon = Math.max(minEpsilon, epsilon * decayRate);
@@ -505,6 +565,12 @@ export function trainCartPoleDQN(options: {
     if (traj.length > bestTraj.length) bestTraj = traj;
   }
 
+  const trainingTimeMs = performance.now() - t0;
+  const initialLoss = episodeLossHistory[0] ?? 0;
+  const finalLoss = episodeLossHistory[episodeLossHistory.length - 1] ?? 0;
+  const lossReductionPct =
+    initialLoss > 0 ? ((initialLoss - finalLoss) / initialLoss) * 100 : 0;
+
   return {
     returnsHistory,
     movingAvg,
@@ -513,6 +579,19 @@ export function trainCartPoleDQN(options: {
     trainedAvgReturn: trainedSum / 15,
     bestEpisodeTrajectory: bestTraj,
     policyNet,
+    execution: {
+      solver: 'DQN (MLP + Replay + Target Net)',
+      trainingTimeMs,
+      iterations: gradientSteps,
+      converged: trainedSum / 15 > randSum / 15,
+      initialLoss,
+      finalLoss,
+      lossReductionPct,
+      convergenceRate:
+        gradientSteps > 0 ? (initialLoss - finalLoss) / gradientSteps : 0,
+      lossHistory: episodeLossHistory,
+      note: `${globalSteps.toLocaleString()} env steps · ${gradientSteps.toLocaleString()} mini-batch updates · ${targetSyncs} target syncs`,
+    },
   };
 }
 

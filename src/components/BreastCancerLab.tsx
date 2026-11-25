@@ -9,6 +9,7 @@ import {
 import {
   CoefficientBarChart,
   ConfusionMatrixCard,
+  ExecutionPerformancePanel,
   MetricTile,
   MultiLineChart,
 } from './Charts';
@@ -127,11 +128,16 @@ const PatchThumbnail: React.FC<{
   malignant: boolean;
   seed: number;
   showGradCam: boolean;
-}> = ({ malignant, seed, showGradCam }) => {
+  onRenderTiming?: (ms: number) => void;
+}> = ({ malignant, seed, showGradCam, onRenderTiming }) => {
   const ref = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
-    if (ref.current) drawSyntheticPatch(ref.current, malignant, seed, showGradCam);
-  }, [malignant, seed, showGradCam]);
+    if (ref.current) {
+      const t0 = performance.now();
+      drawSyntheticPatch(ref.current, malignant, seed, showGradCam);
+      onRenderTiming?.(performance.now() - t0);
+    }
+  }, [malignant, seed, showGradCam, onRenderTiming]);
   return (
     <canvas
       ref={ref}
@@ -150,6 +156,21 @@ export const BreastCancerLab: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showGradCam, setShowGradCam] = useState(true);
   const [patchSeedOffset, setPatchSeedOffset] = useState(0);
+  const [patchRenderMs, setPatchRenderMs] = useState(0);
+  const patchTimesRef = useRef<number[]>(Array(8).fill(0));
+
+  const patchExecution = useMemo(
+    () => ({
+      solver: 'Procedural H&E Canvas + Saliency Grid',
+      trainingTimeMs: patchRenderMs,
+      iterations: showGradCam ? 8 * 24 * 24 : 8,
+      converged: true,
+      note: showGradCam
+        ? '8 synthetic 128×128 patches · 4,608 Grad-CAM grid cells evaluated · CNN training omitted in browser'
+        : '8 synthetic 128×128 patches rendered · Grad-CAM overlay disabled',
+    }),
+    [showGradCam, patchRenderMs]
+  );
 
   const [sampleInputs, setSampleInputs] = useState<Record<string, number>>({
     clump_thickness: 5,
@@ -337,6 +358,13 @@ export const BreastCancerLab: React.FC = () => {
             />
           </div>
 
+          <ExecutionPerformancePanel
+            execution={result.model.execution}
+            iterationLabel="Newton Steps"
+            lossLabel="Balanced Log-Loss"
+            rateLabel="Loss Convergence"
+          />
+
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             <ConfusionMatrixCard
               matrix={result.metrics.confusionMatrix}
@@ -488,6 +516,14 @@ export const BreastCancerLab: React.FC = () => {
                       malignant={isMalignant}
                       seed={100 + i * 17 + patchSeedOffset}
                       showGradCam={showGradCam}
+                      onRenderTiming={(ms) => {
+                        patchTimesRef.current[i] = ms;
+                        if (i === 7) {
+                          setPatchRenderMs(
+                            patchTimesRef.current.reduce((a, b) => a + b, 0)
+                          );
+                        }
+                      }}
                     />
                     <div className="flex items-center justify-between text-xs">
                       <span
@@ -508,6 +544,13 @@ export const BreastCancerLab: React.FC = () => {
               })}
             </div>
           </div>
+
+          <ExecutionPerformancePanel
+            execution={patchExecution}
+            iterationLabel={showGradCam ? 'Grid Cells' : 'Patches'}
+            lossLabel="CNN Objective"
+            rateLabel="Render Mode"
+          />
         </div>
       )}
     </div>

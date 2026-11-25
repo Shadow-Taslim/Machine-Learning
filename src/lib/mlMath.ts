@@ -1,8 +1,22 @@
+export interface ExecutionMetrics {
+  solver: string;
+  trainingTimeMs: number;
+  iterations: number;
+  converged: boolean;
+  initialLoss?: number;
+  finalLoss?: number;
+  lossReductionPct?: number;
+  convergenceRate?: number; // avg loss drop per iteration or final step norm
+  lossHistory?: number[];
+  note?: string;
+}
+
 export interface LinearRegressionResult {
   weights: number[];
   intercept: number;
   predict: (X: number[][]) => number[];
   predictOne: (x: number[]) => number;
+  execution: ExecutionMetrics;
 }
 
 export function solveLinearSystem(A: number[][], b: number[]): number[] {
@@ -42,6 +56,7 @@ export function fitLinearRegression(
   y: number[],
   ridge = 1e-8
 ): LinearRegressionResult {
+  const t0 = performance.now();
   const n = X.length;
   const d = X[0]?.length ?? 0;
   const dim = d + 1; // bias + features
@@ -75,6 +90,26 @@ export function fitLinearRegression(
   const intercept = sol[0];
   const weights = sol.slice(1);
 
+  // Measure normal equation residual ||XtX * sol - Xty||_2
+  let residualSq = 0;
+  for (let r = 0; r < dim; r++) {
+    let lhs = 0;
+    for (let c = 0; c < dim; c++) lhs += XtX[r][c] * sol[c];
+    const diff = lhs - Xty[r];
+    residualSq += diff * diff;
+  }
+
+  // Compute training RMSE as final objective
+  let trainSqErr = 0;
+  for (let i = 0; i < n; i++) {
+    let pred = intercept;
+    for (let j = 0; j < d; j++) pred += weights[j] * X[i][j];
+    const err = pred - y[i];
+    trainSqErr += err * err;
+  }
+  const trainMse = trainSqErr / (n || 1);
+  const trainingTimeMs = performance.now() - t0;
+
   const predictOne = (x: number[]) =>
     weights.reduce((acc, w, idx) => acc + w * x[idx], intercept);
 
@@ -83,6 +118,15 @@ export function fitLinearRegression(
     intercept,
     predictOne,
     predict: (inputs: number[][]) => inputs.map(predictOne),
+    execution: {
+      solver: 'Normal Equation (Gauss-Jordan)',
+      trainingTimeMs,
+      iterations: dim,
+      converged: true,
+      finalLoss: trainMse,
+      convergenceRate: Math.sqrt(residualSq),
+      note: `${dim}×${dim} normal matrix pivots · residual ‖Ax−b‖₂ = ${Math.sqrt(residualSq).toExponential(2)}`,
+    },
   };
 }
 
@@ -166,6 +210,7 @@ export interface LogisticRegressionResult {
   predictProba: (X: number[][]) => number[];
   predictProbaOne: (x: number[]) => number;
   predict: (X: number[][], threshold?: number) => number[];
+  execution: ExecutionMetrics;
 }
 
 export function sigmoid(z: number): number {
@@ -179,7 +224,7 @@ export function sigmoid(z: number): number {
 
 /**
  * L2-regularized Logistic Regression solved via damped Newton-Raphson (IRLS)
- * for small/medium feature counts, falling back to Adam/GD for high dimensions.
+ * for small/medium feature counts, falling back to GD for high dimensions.
  */
 export function fitLogisticRegression(
   X: number[][],
@@ -190,6 +235,7 @@ export function fitLogisticRegression(
     classWeight?: 'balanced' | null;
   } = {}
 ): LogisticRegressionResult {
+  const t0 = performance.now();
   const n = X.length;
   const d = X[0]?.length ?? 0;
   const C = options.C ?? 1.0;
@@ -205,12 +251,30 @@ export function fitLogisticRegression(
     options.classWeight === 'balanced' && negCount > 0 ? n / (2 * negCount) : 1;
   const sampleWeights = y.map((yi) => (yi === 1 ? wPos : wNeg));
 
+  const computeLogLoss = (interceptVal: number, wVec: number[]) => {
+    let loss = 0;
+    let wNormSq = 0;
+    for (let j = 0; j < d; j++) wNormSq += wVec[j] * wVec[j];
+    for (let i = 0; i < n; i++) {
+      const xi = X[i];
+      let z = interceptVal;
+      for (let j = 0; j < d; j++) z += wVec[j] * xi[j];
+      const p = Math.min(1 - 1e-12, Math.max(1e-12, sigmoid(z)));
+      loss -= sampleWeights[i] * (y[i] * Math.log(p) + (1 - y[i]) * Math.log(1 - p));
+    }
+    return loss / (n || 1) + (0.5 * lambda * wNormSq) / (n || 1);
+  };
+
   if (d <= 64) {
     // Exact IRLS / Newton-Raphson with L2 regularization
     const dim = d + 1;
-    let beta = Array(dim).fill(0);
+    const beta = Array(dim).fill(0);
+    const lossHistory: number[] = [computeLogLoss(0, beta.slice(1))];
+    let actualIters = 0;
+    let converged = false;
 
     for (let iter = 0; iter < maxIter; iter++) {
+      actualIters++;
       const grad = Array(dim).fill(0);
       const H: number[][] = Array.from({ length: dim }, () =>
         Array(dim).fill(0)
@@ -252,11 +316,21 @@ export function fitLogisticRegression(
         beta[j] -= step[j];
         maxStep = Math.max(maxStep, Math.abs(step[j]));
       }
-      if (maxStep < 1e-6) break;
+      lossHistory.push(computeLogLoss(beta[0], beta.slice(1)));
+      if (maxStep < 1e-6) {
+        converged = true;
+        break;
+      }
     }
 
     const intercept = beta[0];
     const weights = beta.slice(1);
+    const initialLoss = lossHistory[0];
+    const finalLoss = lossHistory[lossHistory.length - 1];
+    const lossReductionPct =
+      initialLoss > 0 ? ((initialLoss - finalLoss) / initialLoss) * 100 : 0;
+    const trainingTimeMs = performance.now() - t0;
+
     const predictProbaOne = (x: number[]) =>
       sigmoid(weights.reduce((acc, w, idx) => acc + w * x[idx], intercept));
     return {
@@ -266,15 +340,33 @@ export function fitLogisticRegression(
       predictProba: (inputs) => inputs.map(predictProbaOne),
       predict: (inputs, threshold = 0.5) =>
         inputs.map((x) => (predictProbaOne(x) >= threshold ? 1 : 0)),
+      execution: {
+        solver: 'Newton-Raphson (IRLS)',
+        trainingTimeMs,
+        iterations: actualIters,
+        converged,
+        initialLoss,
+        finalLoss,
+        lossReductionPct,
+        convergenceRate:
+          actualIters > 0 ? (initialLoss - finalLoss) / actualIters : 0,
+        lossHistory,
+        note: `Converged to step tol < 1e-6 in ${actualIters} Newton steps`,
+      },
     };
   }
 
-  // High-dimensional sparse/dense fallback via momentum GD
+  // High-dimensional sparse/dense fallback via gradient descent
   const weights = Array(d).fill(0);
   let intercept = 0;
   const lr = 0.25;
   const iters = Math.max(250, maxIter);
+  const lossHistory: number[] = [computeLogLoss(0, weights)];
+  let actualIters = 0;
+  let converged = false;
+
   for (let iter = 0; iter < iters; iter++) {
+    actualIters++;
     const gradW = Array(d).fill(0);
     let gradB = 0;
     for (let i = 0; i < n; i++) {
@@ -292,7 +384,22 @@ export function fitLogisticRegression(
     for (let j = 0; j < d; j++) {
       weights[j] -= (lr * (gradW[j] + lambda * weights[j])) / n;
     }
+    if (iter % 10 === 0 || iter === iters - 1) {
+      const curLoss = computeLogLoss(intercept, weights);
+      const prevLoss = lossHistory[lossHistory.length - 1];
+      lossHistory.push(curLoss);
+      if (iter > 30 && Math.abs(prevLoss - curLoss) < 1e-6) {
+        converged = true;
+        break;
+      }
+    }
   }
+
+  const initialLoss = lossHistory[0];
+  const finalLoss = lossHistory[lossHistory.length - 1];
+  const lossReductionPct =
+    initialLoss > 0 ? ((initialLoss - finalLoss) / initialLoss) * 100 : 0;
+  const trainingTimeMs = performance.now() - t0;
 
   const predictProbaOne = (x: number[]) =>
     sigmoid(weights.reduce((acc, w, idx) => acc + w * x[idx], intercept));
@@ -303,6 +410,19 @@ export function fitLogisticRegression(
     predictProba: (inputs) => inputs.map(predictProbaOne),
     predict: (inputs, threshold = 0.5) =>
       inputs.map((x) => (predictProbaOne(x) >= threshold ? 1 : 0)),
+    execution: {
+      solver: 'L2 Gradient Descent',
+      trainingTimeMs,
+      iterations: actualIters,
+      converged,
+      initialLoss,
+      finalLoss,
+      lossReductionPct,
+      convergenceRate:
+        actualIters > 0 ? (initialLoss - finalLoss) / actualIters : 0,
+      lossHistory,
+      note: `Learning rate η = ${lr} · ${d} sparse TF-IDF features`,
+    },
   };
 }
 

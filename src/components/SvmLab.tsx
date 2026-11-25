@@ -13,7 +13,11 @@ import {
   generateScopFamilySamples,
   SCOP_FAMILIES,
 } from '../lib/svm';
-import { MetricTile, MultiLineChart } from './Charts';
+import {
+  ExecutionPerformancePanel,
+  MetricTile,
+  MultiLineChart,
+} from './Charts';
 
 export const SvmLab: React.FC = () => {
   const [tab, setTab] = useState<'svm2d' | 'protein'>('svm2d');
@@ -170,6 +174,7 @@ export const SvmLab: React.FC = () => {
 
   // Protein Homology Benchmark computation
   const proteinResult = useMemo(() => {
+    const t0 = performance.now();
     const samples = generateScopFamilySamples(familyId, 42);
     const train = samples.filter((s) => s.split === 'train');
     const test = samples.filter((s) => s.split === 'test');
@@ -215,6 +220,8 @@ export const SvmLab: React.FC = () => {
       };
     };
 
+    const totalMs = performance.now() - t0;
+
     return {
       vocabSize: vocab.length,
       trainCount: train.length,
@@ -225,6 +232,14 @@ export const SvmLab: React.FC = () => {
       rbfRoc50,
       ranked,
       scoreCustom,
+      execution: {
+        ...rbfSvm.execution,
+        solver: '2-3mer Spectrum + Dual SMO (Linear & RBF)',
+        trainingTimeMs: totalMs,
+        iterations: linearSvm.execution.iterations + rbfSvm.execution.iterations,
+        converged: linearSvm.execution.converged && rbfSvm.execution.converged,
+        note: `Linear SMO: ${linearSvm.execution.iterations} passes (${linearSvm.supportVectors.length} SVs) · RBF SMO: ${rbfSvm.execution.iterations} passes (${rbfSvm.supportVectors.length} SVs)`,
+      },
     };
   }, [familyId]);
 
@@ -413,21 +428,29 @@ export const SvmLab: React.FC = () => {
             </div>
           </div>
 
-          <div className="xl:col-span-8 bg-white border border-slate-200 rounded-lg p-5">
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-              <h4 className="text-sm font-semibold text-slate-900">
-                Decision Boundary & Margin Contours
-              </h4>
-              <div className="text-xs text-slate-500">
-                Dark outline = Support Vector · Diamond = Held-out Test Point
-              </div>
-            </div>
-            <canvas
-              ref={canvasRef}
-              width={640}
-              height={440}
-              className="w-full h-auto rounded-md border border-slate-200"
+          <div className="xl:col-span-8 space-y-4">
+            <ExecutionPerformancePanel
+              execution={svm2dResult.model.execution}
+              iterationLabel="SMO Passes"
+              lossLabel="Primal Hinge Objective"
+              rateLabel="Objective Drop"
             />
+            <div className="bg-white border border-slate-200 rounded-lg p-5">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <h4 className="text-sm font-semibold text-slate-900">
+                  Decision Boundary & Margin Contours
+                </h4>
+                <div className="text-xs text-slate-500">
+                  Dark outline = Support Vector · Diamond = Held-out Test Point
+                </div>
+              </div>
+              <canvas
+                ref={canvasRef}
+                width={640}
+                height={440}
+                className="w-full h-auto rounded-md border border-slate-200"
+              />
+            </div>
           </div>
         </div>
       ) : (
@@ -474,6 +497,13 @@ export const SvmLab: React.FC = () => {
               detail="use_idf=False, norm=l2"
             />
           </div>
+
+          <ExecutionPerformancePanel
+            execution={proteinResult.execution}
+            iterationLabel="Total SMO Passes"
+            lossLabel="RBF Hinge Objective"
+            rateLabel="Objective Drop"
+          />
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             <MultiLineChart

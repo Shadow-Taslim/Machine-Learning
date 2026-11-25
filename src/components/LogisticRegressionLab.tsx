@@ -8,6 +8,7 @@ import {
 import {
   CoefficientBarChart,
   ConfusionMatrixCard,
+  ExecutionPerformancePanel,
   MetricTile,
   MultiLineChart,
 } from './Charts';
@@ -196,6 +197,13 @@ export const LogisticRegressionLab: React.FC = () => {
           detail={`F1 = ${result.metrics.f1.toFixed(3)}`}
         />
       </div>
+
+      <ExecutionPerformancePanel
+        execution={result.model.execution}
+        iterationLabel="Newton Steps"
+        lossLabel="L2 Log-Loss (Init → Final)"
+        rateLabel="Loss Convergence"
+      />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <ConfusionMatrixCard

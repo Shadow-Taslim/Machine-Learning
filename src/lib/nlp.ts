@@ -1,4 +1,4 @@
-import { fitLogisticRegression } from './mlMath';
+import { fitLogisticRegression, type ExecutionMetrics } from './mlMath';
 import { trainTestSplitIndices } from './csv';
 
 export interface ReviewSample {
@@ -117,6 +117,7 @@ export interface TrainedTextClassifier {
   testSamples: ReviewSample[];
   testProbs: number[];
   testPreds: number[];
+  execution: ExecutionMetrics;
   predictOne: (text: string) => {
     label: 0 | 1;
     probability: number;
@@ -128,6 +129,7 @@ export function trainTfidfLogistic(
   samples: ReviewSample[],
   options: { testSize?: number; seed?: number; C?: number } = {}
 ): TrainedTextClassifier {
+  const t0 = performance.now();
   const testSize = options.testSize ?? 0.25;
   const seed = options.seed ?? 42;
   const C = options.C ?? 2.0;
@@ -187,6 +189,7 @@ export function trainTfidfLogistic(
   const model = fitLogisticRegression(XTrain, yTrain, { C, maxIter: 500 });
   const testProbs = model.predictProba(XTest);
   const testPreds = testProbs.map((p) => (p >= 0.5 ? 1 : 0));
+  const totalTimeMs = performance.now() - t0;
 
   const predictOne = (text: string) => {
     const toks = tokenizeNgrams(text);
@@ -219,6 +222,11 @@ export function trainTfidfLogistic(
     testSamples,
     testProbs,
     testPreds,
+    execution: {
+      ...model.execution,
+      trainingTimeMs: totalTimeMs,
+      solver: `TF-IDF + ${model.execution.solver}`,
+    },
     predictOne,
   };
 }
