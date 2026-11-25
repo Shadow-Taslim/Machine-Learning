@@ -1,0 +1,5 @@
+{
+  "name": "Machine Learning Workbench",
+  "description": "Interactive browser-based machine learning laboratory replicating Linear Regression, Logistic Regression, Breast Cancer Detection, SVM, Text Classification, Q-Learning, and DQN CartPole experiments.",
+  "requestFramePermissions": []
+}
